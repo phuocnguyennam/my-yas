@@ -1,7 +1,7 @@
 import apiClientService from '@commonServices/ApiClientService';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-
+ 
 const baseUrl = '/authentication/user';
 
 export default function AuthenticationInfo() {

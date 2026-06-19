@@ -13,11 +13,11 @@ inputs:
   sonar_organization:
     description: SonarCloud Organization
     required: false
-    default: "23120091"
+    default: "phuocnguyennam"
   sonar_project_key:
     description: SonarCloud Project Key
     required: false
-    default: "23120091_yas"
+    default: "phuocnguyennam_my-yas"
 
 runs:
   using: "composite"
