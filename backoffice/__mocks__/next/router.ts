@@ -8,4 +8,4 @@ export const useRouter = () => ({
   reload: jest.fn(),
   back: jest.fn(),
   prefetch: jest.fn().mockResolvedValue(null),
-});
+}); 
