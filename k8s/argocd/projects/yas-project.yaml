@@ -29,7 +29,7 @@ spec:
   # Application that deploys from a malicious repository.
   # --------------------------------------------------------------------------
   sourceRepos:
-    - https://github.com/23120091/yas   # main monorepo
+    - https://github.com/phuocnguyennam/my-yas   # main monorepo
     # Add additional repos if you store charts or values in separate repos:
     # - https://github.com/23120091/yas-configs
     # - https://charts.example.com

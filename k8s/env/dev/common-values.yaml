@@ -26,7 +26,7 @@ backend:
   # files set the specific tag like "dev-<sha>" for each service)
   # --------------------------------------------------------------------------
   image:
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     # IfNotPresent: pull only if image not cached on node. Good for dev
     # where we iterate quickly and images change often on the same tag.
     # 

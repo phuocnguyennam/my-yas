@@ -1,0 +1,203 @@
+# ============================================================================
+# ARGOCD APPLICATIONSET — PRODUCTION ENVIRONMENT (file "deploy-applicationset.yaml")
+# ============================================================================
+# Khác biệt cốt lõi so với dev/staging:
+#   1. targetRevision là TAG SEMVER CỤ THỂ (không phải pattern/glob).
+#      Production KHÔNG được tự ý theo bất kỳ commit/branch mới nào —
+#      mỗi lần muốn lên production, một người (hoặc 1 workflow_dispatch có
+#      input version) phải SỬA giá trị targetRevision trong Git, commit vào
+#      main, rồi ArgoCD mới thấy thay đổi.
+#   2. syncPolicy.automated BỊ XOÁ HOÀN TOÀN (không phải để false — Argo
+#      Application không có automated nghĩa là Manual Sync). Người vận hành
+#      phải vào ArgoCD UI/CLI bấm "Sync" thủ công sau khi review diff.
+#   3. Image tag = đúng version tag (không dùng "latest").
+#
+# Quy trình thực tế:
+#   - Đổi targetRevision của service cần lên prod (vd: "v1.4.0") → commit
+#     → push lên main.
+#   - ArgoCD phát hiện Application bị "OutOfSync" (vì Git thay đổi) nhưng
+#     KHÔNG tự sync — chỉ hiện trạng thái chờ.
+#   - Người có quyền (role sre trong AppProject) vào ArgoCD UI xem diff,
+#     bấm Sync thủ công → Helm chart được apply vào namespace production.
+# ============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: yas-production
+  namespace: argocd
+  labels:
+    env: production
+    team: yas
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          # --------------------------------------------------------------
+          # "version" = git tag chính xác đang chạy ở production cho từng
+          # service. Đây là field DUY NHẤT bạn cần sửa để promote 1 service
+          # lên phiên bản mới — mỗi service có thể ở version khác nhau.
+          # --------------------------------------------------------------
+          - service: product
+            type: backend
+            directory: k8s/charts/product
+            version: v1.0.0
+          - service: backoffice-bff
+            type: backend
+            directory: k8s/charts/backoffice-bff
+            version: v1.0.0
+          - service: cart
+            type: backend
+            directory: k8s/charts/cart
+            version: v1.0.0
+          - service: customer
+            type: backend
+            directory: k8s/charts/customer
+            version: v1.0.0
+          - service: inventory
+            type: backend
+            directory: k8s/charts/inventory
+            version: v1.0.0
+          - service: location
+            type: backend
+            directory: k8s/charts/location
+            version: v1.0.0
+          - service: media
+            type: backend
+            directory: k8s/charts/media
+            version: v1.0.0
+          - service: order
+            type: backend
+            directory: k8s/charts/order
+            version: v1.0.0
+          - service: payment
+            type: backend
+            directory: k8s/charts/payment
+            version: v1.0.0
+          - service: payment-paypal
+            type: backend
+            directory: k8s/charts/payment-paypal
+            version: v1.0.0
+          - service: promotion
+            type: backend
+            directory: k8s/charts/promotion
+            version: v1.0.0
+          - service: rating
+            type: backend
+            directory: k8s/charts/rating
+            version: v1.0.0
+          - service: recommendation
+            type: backend
+            directory: k8s/charts/recommendation
+            version: v1.0.0
+          - service: sampledata
+            type: backend
+            directory: k8s/charts/sampledata
+            version: v1.0.0
+          - service: search
+            type: backend
+            directory: k8s/charts/search
+            version: v1.0.0
+          - service: storefront-bff
+            type: backend
+            directory: k8s/charts/storefront-bff
+            version: v1.0.0
+          - service: tax
+            type: backend
+            directory: k8s/charts/tax
+            version: v1.0.0
+          - service: webhook
+            type: backend
+            directory: k8s/charts/webhook
+            version: v1.0.0
+          - service: backoffice-ui
+            type: frontend
+            directory: k8s/charts/backoffice-ui
+            version: v1.0.0
+          - service: storefront-ui
+            type: frontend
+            directory: k8s/charts/storefront-ui
+            version: v1.0.0
+
+  template:
+    metadata:
+      name: "{{service}}-production"
+      labels:
+        env: production
+        service: "{{service}}"
+        team: yas
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+
+    spec:
+      project: yas
+
+      source:
+        repoURL: https://github.com/phuocnguyennam/my-yas
+        # ----------------------------------------------------------------
+        # KHÔNG dùng glob/pattern ở đây. targetRevision = chính nhánh main,
+        # vì cấu trúc chart/values nằm trên main; còn IMAGE TAG production
+        # mới là cái version thực sự cần khoá cứng (xem values.tag dưới).
+        # Nếu muốn pin luôn cả Helm chart theo tag Git (không chỉ image),
+        # đổi dòng dưới thành targetRevision: "{{.version}}" — nhưng lúc đó
+        # bạn phải tag luôn commit chứa chart k8s/charts/ mỗi lần release.
+        # ----------------------------------------------------------------
+        targetRevision: main
+        path: "{{directory}}"
+
+        helm:
+          valueFiles:
+            - "../../env/production/common-values.yaml"
+          ignoreMissingValueFiles: true
+          values: |
+            {{- if eq .type "backend" }}
+            backend:
+              image:
+                repository: ghcr.io/phuocnguyennam/{{service}}
+                tag: "{{.version}}"
+              nameOverride: {{service}}
+              fullnameOverride: {{service}}
+              databaseName: {{service}}
+              extraVolumes:
+                - name: {{service}}-application-config
+                  configMap:
+                    name: {{service}}-application-configmap
+
+              extraVolumeMounts:
+                - name: {{service}}-application-config
+                  mountPath: /opt/yas/{{service}}
+
+              extraApplicationConfigPaths:
+                - /opt/yas/{{service}}/{{service}}-application.yaml
+            {{- else if eq .type "frontend" }}
+            frontend:
+              image:
+                repository: ghcr.io/phuocnguyennam/{{service}}
+                tag: "{{.version}}"
+              ingress:
+                enabled: false
+            {{- end }}
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: production
+
+      # ------------------------------------------------------------------------
+      # SYNC POLICY — KHÔNG có "automated" → Manual Sync.
+      # ArgoCD sẽ đánh dấu Application là "OutOfSync" khi Git thay đổi nhưng
+      # KHÔNG tự apply gì vào cluster cho đến khi người vận hành bấm Sync
+      # (qua UI, CLI `argocd app sync <name>`, hoặc API).
+      # syncOptions vẫn áp dụng MỖI KHI sync được kích hoạt (thủ công).
+      # ------------------------------------------------------------------------
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

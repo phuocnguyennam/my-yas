@@ -41,7 +41,7 @@ spec:
   #   to yas-project.yaml are applied by this Application.
 
   source:
-    repoURL: https://github.com/23120091/yas
+    repoURL: https://github.com/phuocnguyennam/my-yas
     targetRevision: main
     path: k8s/argocd/applicationsets
     # ^ Points to the directory containing ALL ApplicationSet YAMLs.

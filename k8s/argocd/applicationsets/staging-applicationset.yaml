@@ -1,0 +1,197 @@
+# ============================================================================
+# ARGOCD APPLICATIONSET — STAGING ENVIRONMENT
+# ============================================================================
+# Tương tự dev-applicationset.yaml nhưng:
+#   - targetRevision dùng BRANCH PATTERN "rc_v*" (mục 6b đề bài: release
+#     branch dạng rc_v1.2.3 thay vì git tag). ArgoCD sẽ tự match nhánh nào
+#     khớp pattern này và theo dõi nó — mỗi khi có nhánh rc_v* mới hoặc có
+#     commit mới trên nhánh rc_v* hiện tại, ArgoCD tự build lại manifest.
+#   - Vì ArgoCD ApplicationSet List generator không tự "chọn nhánh nào trong
+#     nhiều rc_v* là mới nhất", trong thực tế bạn cần 1 trong 2 cách:
+#       (a) Chỉ giữ DUY NHẤT 1 nhánh rc_v* "đang active" tại một thời điểm
+#           (xoá nhánh rc cũ sau khi merge) — ArgoCD watch theo glob pattern
+#           "rc_v*" và Argo sẽ tự pick nhánh tồn tại khớp pattern.
+#       (b) Dùng CI để cập nhật giá trị targetRevision cụ thể (vd: rc_v1.4.0)
+#           vào 1 file values do Argo theo dõi (Argo Image Updater pattern).
+#     Ở đây mình dùng cách (a) — đơn giản, đúng tinh thần đề bài, và phù hợp
+#     với mô hình "tách branch rc_vX.X.X" mà đề bài đề xuất.
+#
+# Image tag: tách biệt với dev. Pipeline CI cho staging (cần thêm trong
+# shared-java-ci.yml / shared-node-ci.yml hoặc 1 workflow riêng ci-staging.yml)
+# build & push image với tag = tên branch rc_v* (an toàn để track phiên bản),
+# ví dụ: ghcr.io/phuocnguyennam/product:rc_v1.4.0
+#
+# Sync policy: AUTOMATED — đúng yêu cầu "auto build/deploy vào namespace
+# staging khi phát hiện nhánh release mới"
+# ============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: yas-staging
+  namespace: argocd
+  labels:
+    env: staging
+    team: yas
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          # --- BACKEND SERVICES ---
+          - service: product
+            type: backend
+            directory: k8s/charts/product
+          - service: backoffice-bff
+            type: backend
+            directory: k8s/charts/backoffice-bff
+          - service: cart
+            type: backend
+            directory: k8s/charts/cart
+          - service: customer
+            type: backend
+            directory: k8s/charts/customer
+          - service: inventory
+            type: backend
+            directory: k8s/charts/inventory
+          - service: location
+            type: backend
+            directory: k8s/charts/location
+          - service: media
+            type: backend
+            directory: k8s/charts/media
+          - service: order
+            type: backend
+            directory: k8s/charts/order
+          - service: payment
+            type: backend
+            directory: k8s/charts/payment
+          - service: payment-paypal
+            type: backend
+            directory: k8s/charts/payment-paypal
+          - service: promotion
+            type: backend
+            directory: k8s/charts/promotion
+          - service: rating
+            type: backend
+            directory: k8s/charts/rating
+          - service: recommendation
+            type: backend
+            directory: k8s/charts/recommendation
+          - service: sampledata
+            type: backend
+            directory: k8s/charts/sampledata
+          - service: search
+            type: backend
+            directory: k8s/charts/search
+          - service: storefront-bff
+            type: backend
+            directory: k8s/charts/storefront-bff
+          - service: tax
+            type: backend
+            directory: k8s/charts/tax
+          - service: webhook
+            type: backend
+            directory: k8s/charts/webhook
+          # --- FRONTEND SERVICES ---
+          - service: backoffice-ui
+            type: frontend
+            directory: k8s/charts/backoffice-ui
+          - service: storefront-ui
+            type: frontend
+            directory: k8s/charts/storefront-ui
+
+  template:
+    metadata:
+      name: "{{service}}-staging"
+      labels:
+        env: staging
+        service: "{{service}}"
+        team: yas
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+
+    spec:
+      project: yas
+
+      source:
+        repoURL: https://github.com/phuocnguyennam/my-yas
+        # --------------------------------------------------------------------
+        # targetRevision dạng GLOB PATTERN — ArgoCD hỗ trợ "*" để theo dõi
+        # branch khớp pattern (xem: ArgoCD tracking branches/tags docs).
+        # Mỗi khi có commit mới trên nhánh khớp "rc_v*", Application này sẽ
+        # tự động phát hiện và đồng bộ lại (trong vòng polling interval,
+        # mặc định 3 phút, hoặc ngay lập tức nếu dùng webhook).
+        # --------------------------------------------------------------------
+        targetRevision: "rc_v*"
+        path: "{{directory}}"
+
+        helm:
+          valueFiles:
+            - "../../env/staging/common-values.yaml"
+          ignoreMissingValueFiles: true
+          values: |
+            {{- if eq .type "backend" }}
+            backend:
+              image:
+                repository: ghcr.io/phuocnguyennam/{{service}}
+                # Tag để trống ở đây — CI pipeline cho staging sẽ set tag cụ
+                # thể (= tên branch rc_v*, ví dụ "rc_v1.4.0") khi build & push,
+                # và cập nhật vào file k8s/env/staging/{{service}}-values.yaml
+                # (nếu service đã có file riêng) hoặc qua --set lúc kubectl/
+                # helm template ngoài luồng ArgoCD nếu bạn dùng Image Updater.
+                tag: latest
+              nameOverride: {{service}}
+              fullnameOverride: {{service}}
+              databaseName: {{service}}
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi
+              extraVolumes:
+                - name: {{service}}-application-config
+                  configMap:
+                    name: {{service}}-application-configmap
+
+              extraVolumeMounts:
+                - name: {{service}}-application-config
+                  mountPath: /opt/yas/{{service}}
+
+              extraApplicationConfigPaths:
+                - /opt/yas/{{service}}/{{service}}-application.yaml
+            {{- else if eq .type "frontend" }}
+            frontend:
+              image:
+                repository: ghcr.io/phuocnguyennam/{{service}}
+                tag: latest
+              ingress:
+                enabled: false
+            {{- end }}
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: staging
+
+      # ------------------------------------------------------------------------
+      # SYNC POLICY — AUTOMATED, đúng yêu cầu mục 6b: khi phát hiện nhánh
+      # rc_v* mới (hoặc commit mới trên nhánh đó), tự động build image + deploy
+      # đè vào namespace staging — không cần con người can thiệp.
+      # ------------------------------------------------------------------------
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: true
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
