@@ -1,8 +1,10 @@
 name: CI
-  
+
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "**" ]      # CHANGED: was ["main", "dev"] — now ALL branches trigger CI
+                            # Requirement (mục 3): "mỗi branch của user tạo, sau khi
+                            # user commit code thay đổi, bạn phải build ra một image"
   pull_request:
     branches: [ "main", "dev" ]
   workflow_dispatch:
@@ -45,7 +47,7 @@ jobs:
               - 'backoffice/**'
             storefront:
               - 'storefront/**'
-            
+
 
       - name: Filter Service Changes
         uses: dorny/paths-filter@v3
@@ -122,7 +124,7 @@ jobs:
         run: |
           mkdir -p root_files
           find . -maxdepth 1 -type f -exec cp {} root_files/ \;
-        
+
       - name: Run Gitleaks on Root Files
         if: ${{ needs.filter-changes.outputs.root == 'true' }}
         uses: ./.github/workflows/actions/gitleaks-scan
@@ -135,17 +137,17 @@ jobs:
     if: ${{ needs.filter-changes.outputs.services != '[]' && needs.filter-changes.outputs.services != '' }}
     name: Java CI for ${{ matrix.service }}
     strategy:
-      fail-fast: false 
+      fail-fast: false
       matrix:
         service: ${{ fromJson(needs.filter-changes.outputs.services) }}
-    
+
     uses: ./.github/workflows/shared-java-ci.yml
     with:
       service_name: ${{ matrix.service }}
       service_path: ${{ matrix.service }}
       java_version: '25'
       min_coverage_overall: 70
-      docker_image: ghcr.io/23120091/${{ matrix.service }}:${{ github.sha }}
+      docker_image: ghcr.io/phuocnguyennam/${{ matrix.service }}:${{ github.sha }}
     secrets: inherit
 
   # Run CI for frontend Node.js services when changed
@@ -162,7 +164,7 @@ jobs:
       service_name: ${{ matrix.service }}
       service_path: ${{ matrix.service }}
       min_coverage_overall: 70
-      docker_image: ghcr.io/23120091/${{ matrix.service }}:${{ github.sha }}
+      docker_image: ghcr.io/phuocnguyennam/${{ matrix.service }}:${{ github.sha }}
     secrets: inherit
 
   # Check final status of all triggered CI jobs

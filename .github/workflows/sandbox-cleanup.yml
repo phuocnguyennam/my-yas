@@ -1,0 +1,55 @@
+name: Sandbox Cleanup
+
+# ============================================================================
+# Mục 5 của đề bài: job để xoá phần triển khai từ developer_build.
+# Đơn giản: xoá toàn bộ namespace "sandbox" — mọi helm release + resource
+# bên trong (Deployments, Services, etc.) bị xoá theo.
+# ============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm deleting the sandbox namespace'
+        required: true
+        default: 'no'
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NAMESPACE: sandbox
+
+jobs:
+  cleanup:
+    name: Delete sandbox namespace
+    runs-on: ubuntu-latest
+    if: ${{ inputs.confirm == 'yes' }}
+    steps:
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Delete namespace
+        run: |
+          if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
+            kubectl delete namespace "$NAMESPACE" --wait=true --timeout=120s
+            echo "Namespace '$NAMESPACE' deleted."
+          else
+            echo "Namespace '$NAMESPACE' does not exist — nothing to do."
+          fi
+
+  abort:
+    name: Cleanup aborted (confirmation missing)
+    runs-on: ubuntu-latest
+    if: ${{ inputs.confirm != 'yes' }}
+    steps:
+      - run: |
+          echo "::error::Cleanup was NOT run. You must type exactly 'yes' in the confirm input."
+          exit 1

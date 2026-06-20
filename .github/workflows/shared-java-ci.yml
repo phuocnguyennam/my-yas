@@ -68,7 +68,7 @@ jobs:
           java_version: ${{ inputs.java_version }}
           service_path: ${{ inputs.service_path }}
           service_name: ${{ inputs.service_name }}
-      
+
       - name: Java Code Quality
         uses: ./.github/workflows/actions/java-static-analysis
         with:
@@ -88,7 +88,11 @@ jobs:
   docker-publish:
     name: Docker Publish & Scan
     needs: [build-and-test]
-    if: ${{ (github.ref == 'refs/heads/main' || github.event_name == 'pull_request') && inputs.docker_image != '' }}
+    # CHANGED: removed the "main or PR only" restriction.
+    # Requirement (mục 3): EVERY branch must get an image built + pushed
+    # on every commit, tagged with that branch's last commit id.
+    # We still skip docker-publish entirely if the caller didn't pass an image name.
+    if: ${{ inputs.docker_image != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,6 +116,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute branch-safe tag
+        id: branch_tag
+        shell: bash
+        run: |
+          # Turn refs/heads/dev_tax_service -> dev_tax_service
+          # Sanitize slashes (feature/x -> feature-x) since Docker tags can't contain '/'
+          RAW_BRANCH="${GITHUB_REF#refs/heads/}"
+          SAFE_BRANCH=$(echo "$RAW_BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          echo "safe_branch=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -119,6 +135,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ steps.branch_tag.outputs.safe_branch }}-${{ steps.branch_tag.outputs.short_sha }},enable=${{ github.event_name != 'pull_request' }}
             type=sha,format=short
             type=ref,event=pr
 
@@ -127,7 +144,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./${{ inputs.service_path }}
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -135,7 +152,7 @@ jobs:
         uses: ./.github/workflows/actions/snyk-container-scan
         continue-on-error: true
         with:
-          image_name: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:sha-${{ github.sha_short || 'latest' }}
+          image_name: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:${{ steps.branch_tag.outputs.safe_branch }}-${{ steps.branch_tag.outputs.short_sha }}
           snyk_token: ${{ secrets.SNYK_TOKEN }}
           service_path: ${{ inputs.service_path }}
 

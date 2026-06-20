@@ -28,7 +28,7 @@ backend:
   #               so every pod restart pulls the newest image.
   # --------------------------------------------------------------------------
   image:
-    repository: ghcr.io/23120091/product
+    repository: ghcr.io/phuocnguyennam/product
     tag: latest
     # NOTE: CI pipeline (ci-dev.yaml) will automatically replace "latest"
     # with "dev-<github.sha>" on every push to main. We keep "latest" as

@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -93,7 +93,7 @@ jobs:
           service_path: ${{ inputs.service_path }}
           manifest_file: ${{ inputs.service_path }}/package.json
           snyk_token: ${{ secrets.SNYK_TOKEN }}
-          
+
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4
         if: always()
@@ -164,10 +164,10 @@ jobs:
 
           COVERAGE=$(jq '.total.lines.pct' "$COVERAGE_FILE")
           echo "Overall instruction coverage: ${COVERAGE}%"
-          
+
           MIN=${{ inputs.min_coverage_overall }}
           PASS=$(echo "$COVERAGE >= $MIN" | bc -l)
-          
+
           if [ "$PASS" -eq 0 ]; then
             echo "Coverage ${COVERAGE}% is below required ${MIN}%"
             exit 1
@@ -192,7 +192,10 @@ jobs:
   docker-publish:
     name: Docker Publish
     needs: [build-and-test]
-    if: ${{ github.ref == 'refs/heads/main' && inputs.docker_image != '' }}
+    # CHANGED: removed the "main only" restriction — every branch publishes an image
+    # tagged with <branch>-<short-sha>, per requirement mục 3. "latest" still only
+    # moves on main so dev/staging defaults stay predictable.
+    if: ${{ inputs.docker_image != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -204,17 +207,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate short SHA
-        run: echo "SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+      - name: Compute branch-safe tag
+        id: branch_tag
+        shell: bash
+        run: |
+          RAW_BRANCH="${GITHUB_REF#refs/heads/}"
+          SAFE_BRANCH=$(echo "$RAW_BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          echo "safe_branch=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Compute tag list
+        id: tags
+        shell: bash
+        run: |
+          TAGS="ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:${{ steps.branch_tag.outputs.short_sha }}"
+          TAGS="$TAGS,ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:${{ steps.branch_tag.outputs.safe_branch }}-${{ steps.branch_tag.outputs.short_sha }}"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TAGS="$TAGS,ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:latest"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push
         uses: docker/build-push-action@v6
         with:
           context: ./${{ inputs.service_path }}
           push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:latest
-            ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:${{ env.SHORT_SHA }}
+          tags: ${{ steps.tags.outputs.tags }}
 
       - name: Snyk Container Scan
         uses: snyk/actions/docker@master
@@ -222,4 +241,4 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: ${{ inputs.docker_image }}
+          image: ghcr.io/${{ github.repository_owner }}/${{ inputs.service_name }}:${{ steps.branch_tag.outputs.short_sha }}
