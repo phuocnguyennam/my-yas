@@ -189,40 +189,40 @@ spec:
             - "../../env/dev/common-values.yaml"
           ignoreMissingValueFiles: true
           values: |
-            {{- if eq .type "backend" }}
+            {{ if eq .type "backend" }}
             backend:
               image:
-                repository: ghcr.io/phuocnguyennam/{{service}}
+                repository: ghcr.io/phuocnguyennam/{{.service}}
                 tag: latest
-              nameOverride: {{service}}
-              fullnameOverride: {{service}}
-              databaseName: {{service}}
+              nameOverride: {{.service}}
+              fullnameOverride: {{.service}}
+              databaseName: {{.service}}
               resources:
                 requests:
                   cpu: 100m       
                   memory: 256Mi 
                 limits:
                   cpu: 500m
-                  memory: 512Mi
+                  memory: 1024Mi
               extraVolumes:
-                - name: {{service}}-application-config
+                - name: {{.service}}-application-config
                   configMap:
-                    name: {{service}}-application-configmap
+                    name: {{.service}}-application-configmap
 
               extraVolumeMounts:
-                - name: {{service}}-application-config
-                  mountPath: /opt/yas/{{service}}
+                - name: {{.service}}-application-config
+                  mountPath: /opt/yas/{{.service}}
 
               extraApplicationConfigPaths:
-                - /opt/yas/{{service}}/{{service}}-application.yaml
-            {{- else if eq .type "frontend" }}
+                - /opt/yas/{{.service}}/{{.service}}-application.yaml
+            {{ else if eq .type "frontend" }}
             frontend:
               image:
-                repository: ghcr.io/phuocnguyennam/{{service}}
+                repository: ghcr.io/phuocnguyennam/{{.service}}
                 tag: latest
               ingress:
                 enabled: false
-            {{- end }}
+            {{ end }}
           # You can also set individual values inline (highest precedence):
           # values: |
           #   backend:
